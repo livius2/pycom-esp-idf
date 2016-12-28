@@ -26,7 +26,7 @@ TEST_CASE("can probe SD", "[sd]")
     sdmmc_init_config_t config = {
             .flags = SDMMC_FLAG_1BIT,
             .slot = SDMMC_SLOT_1,
-            .max_freq_khz = SDMMC_FREQ_DEFAULT,
+            .max_freq_khz = 20000,
             .io_voltage = 3.3f
     };
     sdmmc_card_info_t* card = malloc(sizeof(sdmmc_card_info_t));
@@ -61,14 +61,12 @@ static void do_single_write_read_test(sdmmc_card_info_t* card,
 TEST_CASE("can write and read back blocks", "[sd]")
 {
     sdmmc_req_init();
-    gpio_pullup_en(12);
-    gpio_pullup_en(13);
     esp_log_level_set("sdmmc_req", ESP_LOG_INFO);
     esp_log_level_set("sdmmc_cmd", ESP_LOG_DEBUG);
     sdmmc_init_config_t config = {
-            .flags = SDMMC_FLAG_4BIT,
+            .flags = SDMMC_FLAG_1BIT,
             .slot = SDMMC_SLOT_1,
-            .max_freq_khz = 400,
+            .max_freq_khz = 20000,
             .io_voltage = 3.3f
     };
     sdmmc_card_info_t* card = malloc(sizeof(sdmmc_card_info_t));

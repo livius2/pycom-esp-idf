@@ -16,6 +16,7 @@
  */
 
 #include <string.h>
+#include <stdio.h>
 #include "esp_log.h"
 #include "esp_heap_alloc_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -28,7 +29,9 @@
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
-static const char* TAG = "sdmmc_cmd";
+// #define printf(...)
+
+// static const char* TAG = "sdmmc_cmd";
 
 static esp_err_t sdmmc_send_cmd(sdmmc_command_t* cmd);
 static esp_err_t sdmmc_send_app_cmd(uint16_t rca, sdmmc_command_t* cmd);
@@ -55,93 +58,93 @@ esp_err_t sdmmc_card_init(const sdmmc_init_config_t* config,
         sdmmc_card_info_t* out_info)
 {
     if (config->max_freq_khz > 40000) {
-        ESP_LOGE(TAG, "frequency exceeds max supported by driver");
+        printf( "frequency exceeds max supported by driver\n");
         return ESP_ERR_INVALID_ARG;
     }
     if (config->io_voltage < 2.8f || config->io_voltage > 3.6f) {
-        ESP_LOGE(TAG, "IO voltage is not supported by driver");
+        printf( "IO voltage is not supported by driver\n");
         return ESP_ERR_INVALID_ARG;
     }
     esp_err_t err = sdmmc_send_cmd_go_idle_state();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: go_idle_state (1) returned %d", __func__, err);
+        printf( "%s: go_idle_state (1) returned %d\n", __func__, err);
         return err;
     }
     uint32_t card_ocr;
     err = sdmmc_send_cmd_send_op_cond(0, &card_ocr);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_op_cond (1) returned %d", __func__, err);
+        printf( "%s: send_op_cond (1) returned %d\n", __func__, err);
         return err;
     }
     uint32_t host_ocr = get_host_ocr(config->io_voltage);
     if ((host_ocr & card_ocr) == 0) {
-        ESP_LOGE(TAG, "%s: card reported unsupported OCR: %08x", __func__, card_ocr);
+        printf( "%s: card reported unsupported OCR: %08x\n", __func__, card_ocr);
         return err;
     }
     err = sdmmc_send_cmd_go_idle_state();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: go_idle_state (2) returned %d", __func__, err);
+        printf( "%s: go_idle_state (2) returned %d\n", __func__, err);
         return err;
     }
     err = sdmmc_send_cmd_send_if_cond(card_ocr);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_if_cond returned %d", __func__, err);
+        printf( "%s: send_if_cond returned %d\n", __func__, err);
         return err;
     }
     host_ocr &= card_ocr;
     host_ocr |= SD_OCR_SDHC_CAP;
-    ESP_LOGD(TAG, "sdmmc_card_init: host_ocr=%08x, card_ocr=%08x", host_ocr, card_ocr);
+    printf( "sdmmc_card_init: host_ocr=%08x, card_ocr=%08x\n", host_ocr, card_ocr);
     err = sdmmc_send_cmd_send_op_cond(host_ocr, NULL);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_op_cond (2) returned %d", __func__, err);
+        printf( "%s: send_op_cond (2) returned %d\n", __func__, err);
         return err;
     }
     memset(out_info, 0, sizeof(*out_info));
     out_info->ocr = card_ocr;
     err = sddmc_send_cmd_all_send_cid(&out_info->cid);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: all_send_cid returned %d", __func__, err);
+        printf( "%s: all_send_cid returned %d\n", __func__, err);
         return err;
     }
     err = sdmmc_send_cmd_set_relative_addr(&out_info->rca);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: set_relative_addr returned %d", __func__, err);
+        printf( "%s: set_relative_addr returned %d\n", __func__, err);
         return err;
     }
     err = sdmmc_send_cmd_send_csd(out_info->rca, &out_info->csd);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_csd returned %d", __func__, err);
+        printf( "%s: send_csd returned %d\n", __func__, err);
         return err;
     }
     err = sdmmc_send_cmd_select_card(out_info->rca);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: select_card returned %d", __func__, err);
+        printf( "%s: select_card returned %d\n", __func__, err);
         return err;
     }
     if ((out_info->ocr & SD_OCR_SDHC_CAP) == 0) {
         err = sdmmc_send_cmd_set_blocklen(&out_info->csd);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "%s: set_blocklen returned %d", __func__, err);
+            printf( "%s: set_blocklen returned %d\n", __func__, err);
             return err;
         }
     }
     err = sdmmc_send_cmd_send_scr(out_info->rca, &out_info->scr);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_scr returned %d", __func__, err);
+        printf( "%s: send_scr returned %d\n", __func__, err);
         return err;
     }
     if ((config->flags & SDMMC_FLAG_4BIT) &&
         (out_info->scr.bus_width & SCR_SD_BUS_WIDTHS_4BIT)) {
-        ESP_LOGD(TAG, "switching to 4-bit bus mode");
+        printf( "switching to 4-bit bus mode");
         err = sdmmc_send_cmd_set_bus_width(out_info->rca, 4);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "set_bus_width failed");
+            printf( "set_bus_width failed");
             return err;
         }
         uint32_t status;
         err = sdmmc_send_cmd_stop_transmission(&status);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "stop_transmission failed, status=%d", status);
+            printf( "stop_transmission failed, status=%d\n", status);
             return err;
         }
     }
@@ -154,26 +157,26 @@ esp_err_t sdmmc_card_init(const sdmmc_init_config_t* config,
             return err;
         }
         if (++count % 10 == 0) {
-            ESP_LOGV(TAG, "waiting for card to become ready (%d)", count);
+            printf( "waiting for card to become ready (%d)\n", count);
         }
     }
     if (config->max_freq_khz >= SDMMC_FREQ_HIGHSPEED &&
         out_info->csd.tr_speed / 1000 > SDMMC_FREQ_HIGHSPEED) {
-        ESP_LOGD(TAG, "switching to HS bus mode");
+        printf( "switching to HS bus mode\n");
         sdmmc_periph_set_speed(SDMMC_PERIPH_SPEED_HIGH);
     } else if (config->max_freq_khz >= SDMMC_FREQ_DEFAULT &&
         out_info->csd.tr_speed / 1000 > SDMMC_FREQ_DEFAULT) {
-        ESP_LOGD(TAG, "switching to DS bus mode");
+        printf( "switching to DS bus mode\n");
         sdmmc_periph_set_speed(SDMMC_PERIPH_SPEED_DEFAULT);
     }
     sdmmc_scr_t scr_tmp;
     err = sdmmc_send_cmd_send_scr(out_info->rca, &scr_tmp);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: send_scr returned %d", __func__, err);
+        printf( "%s: send_scr returned %d\n", __func__, err);
         return err;
     }
     if (memcmp(&out_info->scr, &scr_tmp, sizeof(scr_tmp)) != 0) {
-        ESP_LOGE(TAG, "data check fail!");
+        printf( "data check fail!\n");
         return ESP_ERR_INVALID_RESPONSE;
     }
     return ESP_OK;
@@ -182,15 +185,15 @@ esp_err_t sdmmc_card_init(const sdmmc_init_config_t* config,
 
 static esp_err_t sdmmc_send_cmd(sdmmc_command_t* cmd)
 {
-    ESP_LOGV(TAG, "sending cmd op=%d arg=%x flags=%x data=%p blklen=%d datalen=%d",
+    printf( "sending cmd op=%d arg=%x flags=%x data=%p blklen=%d datalen=%d\n",
             cmd->opcode, cmd->arg, cmd->flags, cmd->data, cmd->blklen, cmd->datalen);
     esp_err_t err = sdmmc_req_run(cmd);
     if (err != 0) {
-        ESP_LOGD(TAG, "sdmmc_req_run returned %d", err);
+        printf( "sdmmc_req_run returned %d", err);
         return err;
     }
     int state = MMC_R1_CURRENT_STATE(cmd->response);
-    ESP_LOGV(TAG, "cmd response %08x %08x %08x %08x err=%d state=%d",
+    printf( "cmd response %08x %08x %08x %08x err=%d state=%d\n",
                cmd->response[0],
                cmd->response[1],
                cmd->response[2],
@@ -209,10 +212,11 @@ static esp_err_t sdmmc_send_app_cmd(uint16_t rca, sdmmc_command_t* cmd)
     };
     esp_err_t err = sdmmc_send_cmd(&app_cmd);
     if (err != ESP_OK) {
+        printf("error sending APP_CMD\n");
         return err;
     }
     if (!(MMC_R1(app_cmd.response) & MMC_R1_APP_CMD)) {
-        ESP_LOGW(TAG, "card doesn't support APP_CMD");
+        printf( "card doesn't support APP_CMD\n");
         return ESP_ERR_NOT_SUPPORTED;
     }
     return sdmmc_send_cmd(cmd);
@@ -342,7 +346,7 @@ static esp_err_t sdmmc_decode_csd(sdmmc_response_t response, sdmmc_csd_t* out_cs
         out_csd->read_block_len = SD_CSD_READ_BL_LEN(response);
         break;
     default:
-        ESP_LOGE(TAG, "unknown SD CSD structure version 0x%x", out_csd->csd_ver);
+        printf( "unknown SD CSD structure version 0x%x\n", out_csd->csd_ver);
         return ESP_ERR_NOT_SUPPORTED;
     }
     out_csd->card_command_class = SD_CSD_CCC(response);
@@ -498,7 +502,7 @@ esp_err_t sdmmc_write_blocks(sdmmc_card_info_t* card, const void* src,
     }
     esp_err_t err = sdmmc_send_cmd(&cmd);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: sdmmc_send_cmd returned %d", __func__, err);
+        printf( "%s: sdmmc_send_cmd returned %d\n", __func__, err);
         return err;
     }
     uint32_t status = 0;
@@ -510,7 +514,7 @@ esp_err_t sdmmc_write_blocks(sdmmc_card_info_t* card, const void* src,
             return err;
         }
         if (++count % 10 == 0) {
-            ESP_LOGV(TAG, "waiting for card to become ready (%d)", count);
+            printf( "waiting for card to become ready (%d)\n", count);
         }
     }
     return ESP_OK;
@@ -538,7 +542,7 @@ esp_err_t sdmmc_read_blocks(sdmmc_card_info_t* card, void* dst,
     }
     esp_err_t err = sdmmc_send_cmd(&cmd);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: sdmmc_send_cmd returned %d", __func__, err);
+        printf( "%s: sdmmc_send_cmd returned %d\n", __func__, err);
         return err;
     }
     uint32_t status = 0;
@@ -550,7 +554,7 @@ esp_err_t sdmmc_read_blocks(sdmmc_card_info_t* card, void* dst,
             return err;
         }
         if (++count % 10 == 0) {
-            ESP_LOGV(TAG, "waiting for card to become ready (%d)", count);
+            printf( "waiting for card to become ready (%d)\n", count);
         }
     }
     return ESP_OK;

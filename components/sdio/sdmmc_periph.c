@@ -19,7 +19,10 @@
 #include "soc/sdmmc_reg.h"
 #include "soc/io_mux_reg.h"
 #include "sdmmc_periph.h"
-
+#include "esp_intr_alloc.h"
+#include "esp_intr.h"
+#include "esp_attr.h"
+#include "driver/gpio.h"
 
 #define SDMMC_PIN_CLK   PERIPHS_IO_MUX_MTMS_U
 #define SDMMC_PIN_CMD   PERIPHS_IO_MUX_MTDO_U
@@ -36,7 +39,7 @@
 
 static const char* TAG = "sdmmc_periph";
 
-static void sdmmc_isr(void* arg);
+static IRAM_ATTR void sdmmc_isr(void* arg);
 static void sdmmc_idma_init();
 
 static intr_handle_t s_intr_handle;
@@ -155,6 +158,7 @@ void sdmmc_start_command(sdmmc_hw_cmd_t cmd, uint32_t arg) {
 
 esp_err_t sdmmc_hw_init(uint32_t max_freq_khz, QueueHandle_t event_queue)
 {
+    esp_err_t ret;
     sdmmc_reset();
 
     ESP_LOGD(TAG, "peripheral version %x, hardware config %08x", SDMMC.verid, SDMMC.hcon);
@@ -164,11 +168,11 @@ esp_err_t sdmmc_hw_init(uint32_t max_freq_khz, QueueHandle_t event_queue)
     SDMMC.intmask.val = 0;
     SDMMC.ctrl.int_enable = 0;
 
-    // Attach interrupt handler
-    esp_err_t ret = esp_intr_alloc(ETS_SDIO_HOST_INTR_SOURCE, 0, &sdmmc_isr, event_queue, &s_intr_handle);
-    if (ret != ESP_OK) {
-        return ret;
-    }
+    // Attach the interrupt handler
+    ESP_INTR_DISABLE(19);
+    intr_matrix_set(xPortGetCoreID(), ETS_SDIO_HOST_INTR_SOURCE, 19);
+    xt_set_interrupt_handler(19, &sdmmc_isr, event_queue);
+    ESP_INTR_ENABLE(19);
 
     // Enable interrupts
     SDMMC.intmask.val =
@@ -189,17 +193,17 @@ esp_err_t sdmmc_hw_init(uint32_t max_freq_khz, QueueHandle_t event_queue)
             SDMMC_PIN_CLK,
             SDMMC_PIN_CMD,
             SDMMC_PIN_D0,
-            SDMMC_PIN_D1,
-            SDMMC_PIN_D2,
-            SDMMC_PIN_D3
     };
-    const size_t sdmmc_pin_count = sizeof(sdmmc_pins)/sizeof(sdmmc_pins[0]);
+    const size_t sdmmc_pin_count = sizeof(sdmmc_pins) / sizeof(sdmmc_pins[0]);
 
     for (size_t i = 0; i < sdmmc_pin_count; ++i) {
         PIN_INPUT_ENABLE(sdmmc_pins[i]);
         PIN_FUNC_SELECT(sdmmc_pins[i], SDMMC_PIN_FUNC);
         PIN_SET_DRV(sdmmc_pins[i], 3);
     }
+    gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
 
     // Configure clock
     ret = sdmmc_clk_cfg(max_freq_khz);
@@ -284,7 +288,7 @@ void sdmmc_idma_resume()
  * the there are no other interesting events which can get lost due to this.
  */
 
-static void sdmmc_isr(void* arg) {
+static IRAM_ATTR void sdmmc_isr(void* arg) {
     QueueHandle_t queue = (QueueHandle_t) arg;
     sdmmc_event_t event;
     uint32_t pending = SDMMC.mintsts.val;
