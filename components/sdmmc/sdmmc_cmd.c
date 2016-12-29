@@ -54,14 +54,6 @@ esp_err_t sdmmc_card_init(const sdmmc_host_t* config,
     ESP_LOGD(TAG, "%s", __func__);
     memset(card, 0, sizeof(*card));
     memcpy(&card->host, config, sizeof(*config));
-    if (config->max_freq_khz > 40000) {
-        ESP_LOGE(TAG, "frequency exceeds max supported by driver");
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (config->io_voltage < 2.8f || config->io_voltage > 3.6f) {
-        ESP_LOGE(TAG, "IO voltage is not supported by driver");
-        return ESP_ERR_INVALID_ARG;
-    }
     esp_err_t err = sdmmc_send_cmd_go_idle_state(card);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "%s: go_idle_state (1) returned %d", __func__, err);

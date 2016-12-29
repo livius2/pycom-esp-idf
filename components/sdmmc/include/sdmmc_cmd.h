@@ -17,11 +17,45 @@
 #include "esp_err.h"
 #include "driver/sdmmc_types.h"
 
+/**
+ * Probe and initialize SD/MMC card using given host
+ *
+ * @note Only SD cards (SDSC and SDHC/SDXC) are supported now.
+ *       Support for MMC/eMMC cards will be added later.
+ *
+ * @param host  pointer to structure defining host controller
+ * @param out_card  pointer to structure which will receive information about the card when the function completes
+ * @return
+ *      - ESP_OK on success
+ *      - One of the error codes from SDMMC host controller
+ */
 esp_err_t sdmmc_card_init(const sdmmc_host_t* host,
         sdmmc_card_t* out_card);
 
+/**
+ * Write given number of sectors to SD/MMC card
+ *
+ * @param card  pointer to card information structure previously initialized using sdmmc_card_init
+ * @param src   pointer to data buffer to read data from; data size must be equal to sector_count * card->csd.sector_size
+ * @param start_sector  sector where to start writing
+ * @param sector_count  number of sectors to write
+ * @return
+ *      - ESP_OK on success
+ *      - One of the error codes from SDMMC host controller
+ */
 esp_err_t sdmmc_write_blocks(sdmmc_card_t* card, const void* src,
         size_t start_sector, size_t sector_count);
 
+/**
+ * Write given number of sectors to SD/MMC card
+ *
+ * @param card  pointer to card information structure previously initialized using sdmmc_card_init
+ * @param dst   pointer to data buffer to write into; buffer size must be at least sector_count * card->csd.sector_size
+ * @param start_sector  sector where to start reading
+ * @param sector_count  number of sectors to read
+ * @return
+ *      - ESP_OK on success
+ *      - One of the error codes from SDMMC host controller
+ */
 esp_err_t sdmmc_read_blocks(sdmmc_card_t* card, void* dst,
         size_t start_sector, size_t sector_count);

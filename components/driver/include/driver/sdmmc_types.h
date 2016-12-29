@@ -22,6 +22,9 @@
 #include <stddef.h>
 #include "esp_err.h"
 
+/**
+ * Decoded values from SD card Card Specific Data register
+ */
 typedef struct {
     int csd_ver;                /*!< CSD structure format */
     int mmc_ver;                /*!< MMC version (for CID format) */
@@ -32,6 +35,9 @@ typedef struct {
     int tr_speed;               /*!< Max transfer speed */
 } sdmmc_csd_t;
 
+/**
+ * Decoded values from SD card Card IDentification register
+ */
 typedef struct {
     int mfg_id;     /*!< manufacturer identification number */
     int oem_id;     /*!< OEM/product identification number */
@@ -41,13 +47,22 @@ typedef struct {
     int date;       /*!< manufacturing date */
 } sdmmc_cid_t;
 
+/**
+ * Decoded values from SD Configuration Register
+ */
 typedef struct {
     int sd_spec;
     int bus_width;
 } sdmmc_scr_t;
 
+/**
+ * SD/MMC command response buffer
+ */
 typedef uint32_t sdmmc_response_t[4];
 
+/**
+ * SD/MMC command information
+ */
 typedef struct {
         uint32_t opcode;            /*!< SD or MMC command index */
         uint32_t arg;               /*!< SD/MMC command argument */
@@ -101,27 +116,36 @@ typedef struct {
         char        *cis1_info[4];
 } sdmmc_cis_t;
 
-
+/**
+ * SD/MMC Host description
+ *
+ * This structure defines properties of SD/MMC host and functions
+ * of SD/MMC host which can be used by upper layers.
+ */
 typedef struct {
-    uint32_t flags;
-#define SDMMC_SLOT_FLAG_1BIT    BIT(0)
-#define SDMMC_SLOT_FLAG_4BIT    BIT(1)
-#define SDMMC_SLOT_FLAG_8BIT    BIT(2)
-#define SDMMC_SLOT_FLAG_SPI     BIT(3)
-    int slot;
-    int max_freq_khz;
-#define SDMMC_FREQ_DEFAULT      20000
-#define SDMMC_FREQ_HIGHSPEED    40000
-#define SDMMC_FREQ_PROBING      4000
-    float io_voltage;
-    esp_err_t (*set_bus_width)(int slot, int width);
-    esp_err_t (*set_card_clk)(int slot, uint32_t freq_khz);
-    esp_err_t (*do_transaction)(int slot, sdmmc_command_t* cmdinfo);
+    uint32_t flags;             /*!< flags defining host properties */
+#define SDMMC_SLOT_FLAG_1BIT    BIT(0)      /*!< host supports 1-line SD and MMC protocol */
+#define SDMMC_SLOT_FLAG_4BIT    BIT(1)      /*!< host supports 4-line SD and MMC protocol */
+#define SDMMC_SLOT_FLAG_8BIT    BIT(2)      /*!< host supports 8-line MMC protocol */
+#define SDMMC_SLOT_FLAG_SPI     BIT(3)      /*!< host supports SPI protocol */
+    int slot;                   /*!< slot number, to be passed to host functions */
+    int max_freq_khz;           /*!< max frequency supported by the host */
+#define SDMMC_FREQ_DEFAULT      20000       /*!< SD/MMC Default speed (limited by clock divider) */
+#define SDMMC_FREQ_HIGHSPEED    40000       /*!< SD High speed (limited by clock divider) */
+#define SDMMC_FREQ_PROBING      4000        /*!< SD/MMC probing speed */
+    float io_voltage;           /*!< I/O voltage used by the controller (voltage switching is not supported) */
+    esp_err_t (*init)(void);    /*!< Host function to initialize the driver */
+    esp_err_t (*set_bus_width)(int slot, int width);    /*!< host function to set bus width */
+    esp_err_t (*set_card_clk)(int slot, uint32_t freq_khz); /*!< host function to set card clock frequency */
+    esp_err_t (*do_transaction)(int slot, sdmmc_command_t* cmdinfo);    /*!< host function to do a transaction */
+    esp_err_t (*deinit)(void);  /*!< host function to deinitialize the driver */
 } sdmmc_host_t;
 
-
+/**
+ * SD/MMC card information structure
+ */
 typedef struct {
-    sdmmc_host_t host;
+    sdmmc_host_t host;          /*!< Host with which the card is associated */
     uint32_t ocr;               /*!< OCR (Operation Conditions Register) value */
     sdmmc_cid_t cid;            /*!< decoded CID (Card IDentification) register value */
     sdmmc_csd_t csd;            /*!< decoded CSD (Card-Specific Data) register value */

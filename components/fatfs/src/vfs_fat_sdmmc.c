@@ -66,6 +66,7 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
     void* workbuf;
     FRESULT res = f_mount(fs, "", 1);
     if (res != FR_OK) {
+        err = ESP_FAIL;
         ESP_LOGD(TAG, "failed to mount card (%d)", res);
         if (!(res == FR_NO_FILESYSTEM && mount_config->format_if_mount_failed)) {
             goto fail_mount;
@@ -75,12 +76,14 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
         workbuf = malloc(workbuf_size);
         res = f_fdisk(0, plist, workbuf);
         if (res != FR_OK) {
+            err = ESP_FAIL;
             ESP_LOGD(TAG, "f_fdisk failed (%d)", res);
             goto fail_format;
         }
         ESP_LOGD(TAG, "formatting card");
         res = f_mkfs("", FM_ANY, s_card->csd.sector_size, workbuf, workbuf_size);
         if (res != FR_OK) {
+            err = ESP_FAIL;
             ESP_LOGD(TAG, "f_mkfs failed (%d)", res);
             goto fail_format;
         }
@@ -88,6 +91,7 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
         ESP_LOGD(TAG, "mounting again");
         res = f_mount(fs, "", 0);
         if (res != FR_OK) {
+            err = ESP_FAIL;
             ESP_LOGD(TAG, "f_mount failed after formatting (%d)", res);
             goto fail_mount;
         }

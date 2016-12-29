@@ -44,6 +44,9 @@ DRESULT disk_read (BYTE pdrv, BYTE* buff, DWORD sector, UINT count);
 DRESULT disk_write (BYTE pdrv, const BYTE* buff, DWORD sector, UINT count);
 DRESULT disk_ioctl (BYTE pdrv, BYTE cmd, void* buff);
 
+/**
+ * Structure of pointers to diskio driver functions.
+ */
 typedef struct {
     DSTATUS (*init) (BYTE pdrv);
     DSTATUS (*status) (BYTE pdrv);
@@ -52,8 +55,23 @@ typedef struct {
     DRESULT (*ioctl) (BYTE pdrv, BYTE cmd, void* buff);
 } ff_diskio_impl_t;
 
+/**
+ * Register diskio driver for given drive number.
+ *
+ * When FATFS library calls one of disk_xxx functions for driver number pdrv,
+ * corresponding function in discio_impl for given pdrv will be called.
+ *
+ * @param pdrv drive number
+ * @param discio_impl  pointer to ff_diskio_impl_t structure with diskio functions
+ */
 void ff_diskio_register(BYTE pdrv, const ff_diskio_impl_t* discio_impl);
 
+/**
+ * Register SD/MMC diskio driver
+ *
+ * @param pdrv  drive number
+ * @param card  pointer to sdmmc_card_t structure describing a card; card should be initialized before calling f_mount.
+ */
 void ff_diskio_register_sdmmc(BYTE pdrv, sdmmc_card_t* card);
 
 /* Disk Status Bits (DSTATUS) */
