@@ -83,13 +83,6 @@ static inline void cpu_configure_region_protection()
     cpu_write_itlb(0x20000000, 0);
 }
 
-static inline void *get_sp()
-{
-    void *sp;
-    asm volatile ("mov %0, sp;" : "=r" (sp));
-    return sp;
-}
-
 /**
  * @brief Set CPU frequency to the value defined in menuconfig
  *
