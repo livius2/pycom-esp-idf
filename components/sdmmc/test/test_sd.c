@@ -39,7 +39,7 @@ static void print_card_info(const sdmmc_card_t* card) {
 
 TEST_CASE("can probe SD", "[sd]")
 {
-    sdmmc_host_t config = SDMMC_HOST_DEFAULT();
+    sdmmc_host_t config = SDMMC_HOST_1_BIT_DEFAULT();
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     sdmmc_host_init();
     sdmmc_host_init_slot(SDMMC_HOST_SLOT_1, &slot_config);
@@ -77,7 +77,7 @@ static void do_single_write_read_test(sdmmc_card_t* card,
     gettimeofday(&t_stop_rd, NULL);
     float time_rd = 1e3f * (t_stop_rd.tv_sec - t_start_rd.tv_sec) + 1e-3f * (t_stop_rd.tv_usec - t_start_rd.tv_usec);
 
-    printf(" |   %6.2f    |      %.2f      |    %.2fs    |     %.2f\n",
+    printf(" |   %6.2f    |      %.2f      |   %6.2f    |     %.2f\n",
             time_wr, total_size / (time_wr / 1000) / (1024 * 1024),
             time_rd, total_size / (time_rd / 1000) / (1024 * 1024));
     srand(start_block);
@@ -89,7 +89,7 @@ static void do_single_write_read_test(sdmmc_card_t* card,
 
 TEST_CASE("can write and read back blocks", "[sd]")
 {
-    sdmmc_host_t config = SDMMC_HOST_DEFAULT();
+    sdmmc_host_t config = SDMMC_HOST_1_BIT_DEFAULT();
     config.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     sdmmc_host_init();
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();

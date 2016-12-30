@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include "esp_log.h"
 #include "esp_intr_alloc.h"
+#include "esp_intr.h"
 #include "soc/sdmmc_struct.h"
 #include "soc/sdmmc_reg.h"
 #include "soc/io_mux_reg.h"
@@ -244,6 +245,14 @@ esp_err_t sdmmc_host_init()
         s_event_queue = NULL;
         return ret;
     }
+
+    // esp_err_t ret;
+    // // Attach the interrupt handler
+    // ESP_INTR_DISABLE(19);
+    // intr_matrix_set(xPortGetCoreID(), ETS_SDIO_HOST_INTR_SOURCE, 19);
+    // xt_set_interrupt_handler(19, &sdmmc_isr, s_event_queue);
+    // ESP_INTR_ENABLE(19);
+
     // Enable interrupts
     SDMMC.intmask.val =
             SDMMC_INTMASK_CD |
@@ -295,15 +304,18 @@ esp_err_t sdmmc_host_init_slot(int slot, const sdmmc_slot_config_t* slot_config)
     configure_pin(pslot->clk);
     configure_pin(pslot->cmd);
     configure_pin(pslot->d0);
-    configure_pin(pslot->d1);
-    configure_pin(pslot->d2);
-    configure_pin(pslot->d3);
-    if (pslot->width == 8) {
-        configure_pin(pslot->d4);
-        configure_pin(pslot->d5);
-        configure_pin(pslot->d6);
-        configure_pin(pslot->d7);
-    }
+    // configure_pin(pslot->d1);
+    // configure_pin(pslot->d2);
+    // configure_pin(pslot->d3);
+    // if (pslot->width == 8) {
+    //     configure_pin(pslot->d4);
+    //     configure_pin(pslot->d5);
+    //     configure_pin(pslot->d6);
+    //     configure_pin(pslot->d7);
+    // }
+    gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
     if (gpio_cd != -1) {
         gpio_set_direction(gpio_cd, GPIO_MODE_INPUT);
         gpio_matrix_in(gpio_cd, pslot->card_detect, 0);
