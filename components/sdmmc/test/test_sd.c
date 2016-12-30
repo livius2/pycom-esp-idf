@@ -57,7 +57,7 @@ static void do_single_write_read_test(sdmmc_card_t* card,
 {
     size_t block_size = card->csd.sector_size;
     size_t total_size = block_size * block_count;
-    printf(" %7d |  %3d  |   %4.1f  ", start_block, block_count, total_size / 1024.0f);
+    printf(" %8d |  %3d  |   %4.1f  ", start_block, block_count, total_size / 1024.0f);
     uint32_t* buffer = pvPortMallocCaps(total_size, MALLOC_CAP_DMA);
     srand(start_block);
     for (size_t i = 0; i < total_size / sizeof(buffer[0]); ++i) {
@@ -98,7 +98,7 @@ TEST_CASE("can write and read back blocks", "[sd]")
     TEST_ASSERT_NOT_NULL(card);
     TEST_ESP_OK(sdmmc_card_init(&config, card));
     print_card_info(card);
-    printf("  sector | count | size(kB) | wr_time(ms) | wr_speed(MB/s) | rd_time(ms) | rd_speed(MB/s)\n");
+    printf("  sector  | count | size(kB) | wr_time(ms) | wr_speed(MB/s) | rd_time(ms) | rd_speed(MB/s)\n");
     do_single_write_read_test(card, 0, 1);
     do_single_write_read_test(card, 0, 4);
     do_single_write_read_test(card, 1, 16);

@@ -94,7 +94,7 @@ esp_err_t sdmmc_card_init(const sdmmc_host_t* config,
         return err;
     }
     const size_t max_sdsc_capacity = UINT32_MAX / card->csd.sector_size + 1;
-    if ((card->ocr & SD_OCR_SDHC_CAP) &&
+    if (!(card->ocr & SD_OCR_SDHC_CAP) &&
          card->csd.capacity > max_sdsc_capacity) {
         ESP_LOGW(TAG, "%s: SDSC card reports capacity=%u. Limiting to %u.",
                 __func__, card->csd.capacity, max_sdsc_capacity);
