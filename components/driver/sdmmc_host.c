@@ -25,6 +25,7 @@
 #include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
 #include "sdmmc_private.h"
+#include "esp_attr.h"
 
 #define SDMMC_EVENT_QUEUE_LENGTH 32
 
@@ -47,7 +48,7 @@ typedef struct {
 } sdmmc_slot_info_t;
 
 
-static void sdmmc_isr(void* arg);
+IRAM_ATTR static void sdmmc_isr(void* arg);
 static void sdmmc_host_dma_init();
 
 static const sdmmc_slot_info_t s_slot_info[2]  = {
@@ -440,7 +441,7 @@ void sdmmc_host_dma_resume()
  * full and some card detect events may be dropped. We ignore this problem for now, since
  * the there are no other interesting events which can get lost due to this.
  */
-static void sdmmc_isr(void* arg) {
+IRAM_ATTR static void sdmmc_isr(void* arg) {
     QueueHandle_t queue = (QueueHandle_t) arg;
     sdmmc_event_t event;
     uint32_t pending = SDMMC.mintsts.val;
