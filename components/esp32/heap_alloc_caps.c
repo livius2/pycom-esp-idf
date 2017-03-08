@@ -23,7 +23,7 @@
 static const char* TAG = "heap_alloc_caps";
 
 /*
-This file, combined with a region allocator that supports tags, solves the problem that the ESP32 has RAM that's 
+This file, combined with a region allocator that supports tags, solves the problem that the ESP32 has RAM that's
 slightly heterogeneous. Some RAM can be byte-accessed, some allows only 32-bit accesses, some can execute memory,
 some can be remapped by the MMU to only be accessed by a certain PID etc. In order to allow the most flexible
 memory allocation possible, this code makes it possible to request memory that has certain capabilities. The
@@ -170,10 +170,10 @@ Warning: These variables are assumed to have the start and end of the data and i
 area used statically by the program, respectively. These variables are defined in the ld
 file.
 */
-extern int _bss_start, _heap_start, _init_start, _iram_text_end;
+extern int _data_start, _heap_start, _init_start, _iram_text_end;
 
 /*
-Initialize the heap allocator. We pass it a bunch of region descriptors, but we need to modify those first to accommodate for 
+Initialize the heap allocator. We pass it a bunch of region descriptors, but we need to modify those first to accommodate for
 the data as loaded by the bootloader.
 ToDo: The regions are different when stuff like trace memory, BT, ... is used. Modify the regions struct on the fly for this.
 Same with loading of apps. Same with using SPI RAM.
@@ -183,14 +183,14 @@ void heap_alloc_caps_init() {
     //Compile-time assert to see if we don't have more tags than is set in heap_regions.h
     _Static_assert((sizeof(tag_desc)/sizeof(tag_desc[0]))-1 <= HEAPREGIONS_MAX_TAGCOUNT, "More than HEAPREGIONS_MAX_TAGCOUNT tags defined!");
     //Disable the bits of memory where this code is loaded.
-    disable_mem_region(&_bss_start, &_heap_start);            //DRAM used by bss/data static variables
+    disable_mem_region(&_data_start, &_heap_start);           //DRAM used by bss/data static variables
     disable_mem_region(&_init_start, &_iram_text_end);        //IRAM used by code
     disable_mem_region((void*)0x3ffae000, (void*)0x3ffb0000); //knock out ROM data region
     disable_mem_region((void*)0x40070000, (void*)0x40078000); //CPU0 cache region
     disable_mem_region((void*)0x40078000, (void*)0x40080000); //CPU1 cache region
 
     // TODO: this region should be checked, since we don't need to knock out all region finally
-    disable_mem_region((void*)0x3ffe0000, (void*)0x3ffe8000); //knock out ROM data region
+    disable_mem_region((void*)0x3ffe0000, (void*)0x3ffe0200); //knock out ROM data region (originally 0x8000 in size)
 
 #if CONFIG_MEMMAP_BT
     disable_mem_region((void*)0x3ffb0000, (void*)0x3ffc0000); //knock out BT data region
@@ -225,7 +225,7 @@ void heap_alloc_caps_init() {
     ESP_EARLY_LOGI(TAG, "Initializing. RAM available for dynamic allocation:");
     for (i=0; regions[i].xSizeInBytes!=0; i++) {
         if (regions[i].xTag != -1) {
-            ESP_EARLY_LOGI(TAG, "At %08X len %08X (%d KiB): %s", 
+            ESP_EARLY_LOGI(TAG, "At %08X len %08X (%d KiB): %s",
                     (int)regions[i].pucStartAddress, regions[i].xSizeInBytes, regions[i].xSizeInBytes/1024, tag_desc[regions[i].xTag].name);
         }
     }
@@ -243,13 +243,13 @@ void heap_alloc_caps_init() {
   This takes a memory chunk in a region that can be addressed as both DRAM as well as IRAM. It will convert it to
   IRAM in such a way that it can be later freed. It assumes both the address as wel as the length to be word-aligned.
   It returns a region that's 1 word smaller than the region given because it stores the original Dram address there.
-  
+
   In theory, we can also make this work by prepending a struct that looks similar to the block link struct used by the
   heap allocator itself, which will allow inspection tools relying on any block returned from any sort of malloc to
   have such a block in front of it, work. We may do this later, if/when there is demand for it. For now, a simple
   pointer is used.
 */
-static void *dram_alloc_to_iram_addr(void *addr, size_t len) 
+static void *dram_alloc_to_iram_addr(void *addr, size_t len)
 {
     uint32_t dstart=(int)addr; //First word
     uint32_t dend=((int)addr)+len-4; //Last word
@@ -291,7 +291,7 @@ void vPortFree( void *pv )
 /*
 Routine to allocate a bit of memory with certain capabilities. caps is a bitfield of MALLOC_CAP_* bits.
 */
-void *pvPortMallocCaps( size_t xWantedSize, uint32_t caps ) 
+void *pvPortMallocCaps( size_t xWantedSize, uint32_t caps )
 {
     int prio;
     int tag, j;

@@ -26,27 +26,19 @@ typedef struct {
     uint32_t dma_status;        ///< masked DMA interrupt status
 } sdmmc_event_t;
 
-typedef enum {
-    SDMMC_PERIPH_SPEED_LOW,     ///< low speed, for initial handshake (400kHz)
-    SDMMC_PERIPH_SPEED_DEFAULT, ///< default speed (up to 25MHz; currently 20MHz)
-    SDMMC_PERIPH_SPEED_HIGH     ///< high speed (up to 50MHz; currently 40MHz)
-} sdmmc_periph_speed_t;
+void sdmmc_host_reset();
 
-void sdmmc_reset();
+void sdmmc_host_start_command(int slot, sdmmc_hw_cmd_t cmd, uint32_t arg);
 
-uint32_t sdmmc_get_hw_config();
+esp_err_t sdmmc_host_wait_for_event(int tick_count, sdmmc_event_t* out_event);
 
-esp_err_t sdmmc_hw_init(uint32_t max_freq_khz, QueueHandle_t event_queue);
+void sdmmc_host_dma_prepare(sdmmc_desc_t* desc, size_t block_size, size_t data_size);
 
-void sdmmc_idma_prepare_transfer(sdmmc_desc_t* desc, size_t block_size, size_t data_size);
+void sdmmc_host_dma_stop();
 
-void sdmmc_idma_stop();
+void sdmmc_host_dma_resume();
 
-void sdmmc_idma_resume();
+esp_err_t sdmmc_host_transaction_handler_init();
 
-esp_err_t sdmmc_periph_set_bus_width(int width);
-
-esp_err_t sdmmc_periph_set_speed(sdmmc_periph_speed_t speed);
-
-void sdmmc_start_command(sdmmc_hw_cmd_t cmd, uint32_t arg);
+void sdmmc_host_transaction_handler_deinit();
 

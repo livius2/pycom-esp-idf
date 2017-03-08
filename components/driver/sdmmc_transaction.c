@@ -17,12 +17,14 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "soc/sdmmc_reg.h"
 #include "soc/sdmmc_struct.h"
-#include "sdmmc_defs.h"
-#include "sdmmc_types.h"
-#include "sdmmc_periph.h"
-#include "sdmmc_req.h"
+#include "driver/sdmmc_types.h"
+#include "driver/sdmmc_defs.h"
+#include "driver/sdmmc_host.h"
+#include "sdmmc_private.h"
+
 
 #define SDMMC_DMA_DESC_CNT  4
 
@@ -56,39 +58,39 @@ const uint32_t SDMMC_CMD_ERR_MASK =
         SDMMC_INTMASK_RCRC |
         SDMMC_INTMASK_RESP_ERR;
 
-static QueueHandle_t s_event_queue;
 static sdmmc_desc_t s_dma_desc[SDMMC_DMA_DESC_CNT];
 static sdmmc_transfer_state_t s_cur_transfer = { 0 };
+static QueueHandle_t s_request_mutex;
 
-static esp_err_t sdmmc_handle_idle_state_events();
+static esp_err_t handle_idle_state_events();
 static sdmmc_hw_cmd_t make_hw_cmd(sdmmc_command_t* cmd);
-static esp_err_t sdmmc_handle_event(sdmmc_command_t* cmd, sdmmc_req_state_t* pstate);
-static esp_err_t sdmmc_process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, sdmmc_req_state_t* pstate);
-static void sdmmc_process_command_response(uint32_t status, sdmmc_command_t* cmd);
-static void sdmmc_fill_dma_descriptors(size_t num_desc);
+static esp_err_t handle_event(sdmmc_command_t* cmd, sdmmc_req_state_t* pstate);
+static esp_err_t process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, sdmmc_req_state_t* pstate);
+static void process_command_response(uint32_t status, sdmmc_command_t* cmd);
+static void fill_dma_descriptors(size_t num_desc);
 
-esp_err_t sdmmc_req_init()
+esp_err_t sdmmc_host_transaction_handler_init()
 {
-    s_event_queue = xQueueCreate(32, sizeof(sdmmc_event_t));
-    if (!s_event_queue) {
+    assert(s_request_mutex == NULL);
+    s_request_mutex = xSemaphoreCreateMutex();
+    if (!s_request_mutex) {
         return ESP_ERR_NO_MEM;
-    }
-    esp_err_t err = sdmmc_hw_init(40000, s_event_queue);
-    if (err != ESP_OK) {
-        return err;
     }
     return ESP_OK;
 }
 
-void sdmmc_req_deinit()
+void sdmmc_host_transaction_handler_deinit()
 {
-    vQueueDelete(s_event_queue);
+    assert(s_request_mutex);
+    vSemaphoreDelete(s_request_mutex);
+    s_request_mutex = NULL;
 }
 
-esp_err_t sdmmc_req_run(sdmmc_command_t* cmdinfo)
+esp_err_t sdmmc_host_do_transaction(int slot, sdmmc_command_t* cmdinfo)
 {
+    xSemaphoreTake(s_request_mutex, portMAX_DELAY);
     // dispose of any events which happened asynchronously
-    sdmmc_handle_idle_state_events();
+    handle_idle_state_events();
     // convert cmdinfo to hardware register value
     sdmmc_hw_cmd_t hw_cmd = make_hw_cmd(cmdinfo);
     if (cmdinfo->data) {
@@ -105,26 +107,27 @@ esp_err_t sdmmc_req_run(sdmmc_command_t* cmdinfo)
         s_cur_transfer.next_desc = 0;
         s_cur_transfer.desc_remaining = (cmdinfo->datalen + SDMMC_DMA_MAX_BUF_LEN - 1) / SDMMC_DMA_MAX_BUF_LEN;
         // prepare descriptors
-        sdmmc_fill_dma_descriptors(SDMMC_DMA_DESC_CNT);
+        fill_dma_descriptors(SDMMC_DMA_DESC_CNT);
         // write transfer info into hardware
-        sdmmc_idma_prepare_transfer(&s_dma_desc[0], cmdinfo->blklen, cmdinfo->datalen);
+        sdmmc_host_dma_prepare(&s_dma_desc[0], cmdinfo->blklen, cmdinfo->datalen);
     }
     // write command into hardware, this also sends the command to the card
-    sdmmc_start_command(hw_cmd, cmdinfo->arg);
+    sdmmc_host_start_command(slot, hw_cmd, cmdinfo->arg);
     // process events until transfer is complete
     esp_err_t ret = ESP_OK;
     cmdinfo->error = ESP_OK;
     sdmmc_req_state_t state = SDMMC_SENDING_CMD;
     while (state != SDMMC_IDLE) {
-        ret = sdmmc_handle_event(cmdinfo, &state);
+        ret = handle_event(cmdinfo, &state);
         if (ret != ESP_OK) {
             break;
         }
     }
-    return ESP_OK;
+    xSemaphoreGive(s_request_mutex);
+    return ret;
 }
 
-static void sdmmc_fill_dma_descriptors(size_t num_desc)
+static void fill_dma_descriptors(size_t num_desc)
 {
     for (size_t i = 0; i < num_desc; ++i) {
         if (s_cur_transfer.size_remaining == 0) {
@@ -153,14 +156,14 @@ static void sdmmc_fill_dma_descriptors(size_t num_desc)
     }
 }
 
-static esp_err_t sdmmc_handle_idle_state_events()
+static esp_err_t handle_idle_state_events()
 {
     /* Handle any events which have happened in between transfers.
      * Under current assumptions (no SDIO support) only card detect events
      * can happen in the idle state.
      */
     sdmmc_event_t evt;
-    while (xQueueReceive(s_event_queue, &evt, 0)) {
+    while (sdmmc_host_wait_for_event(0, &evt) == ESP_OK) {
         if (evt.sdmmc_status & SDMMC_INTMASK_CD) {
             ESP_LOGV(TAG, "card detect event");
             evt.sdmmc_status &= ~SDMMC_INTMASK_CD;
@@ -175,12 +178,16 @@ static esp_err_t sdmmc_handle_idle_state_events()
 }
 
 
-static esp_err_t sdmmc_handle_event(sdmmc_command_t* cmd, sdmmc_req_state_t* state)
+static esp_err_t handle_event(sdmmc_command_t* cmd, sdmmc_req_state_t* state)
 {
     sdmmc_event_t evt;
-    xQueueReceive(s_event_queue, &evt, portMAX_DELAY);
+    esp_err_t err = sdmmc_host_wait_for_event(portMAX_DELAY, &evt);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "sdmmc_periph_wait_for_event returned %d", err);
+        return err;
+    }
     ESP_LOGV(TAG, "sdmmc_handle_event: evt %08x %08x", evt.sdmmc_status, evt.dma_status);
-    sdmmc_process_events(evt, cmd, state);
+    process_events(evt, cmd, state);
     return ESP_OK;
 }
 
@@ -218,13 +225,12 @@ static sdmmc_hw_cmd_t make_hw_cmd(sdmmc_command_t* cmd)
             res.send_auto_stop = 1;
         }
     }
-    res.card_num = 1;
     ESP_LOGV(TAG, "%s: opcode=%d, rexp=%d, crc=%d", __func__,
             res.cmd_index, res.response_expect, res.check_response_crc);
     return res;
 }
 
-static void sdmmc_process_command_response(uint32_t status, sdmmc_command_t* cmd)
+static void process_command_response(uint32_t status, sdmmc_command_t* cmd)
 {
     if (cmd->flags & SCF_RSP_PRESENT) {
         if (cmd->flags & SCF_RSP_136) {
@@ -253,9 +259,9 @@ static void sdmmc_process_command_response(uint32_t status, sdmmc_command_t* cmd
     }
     if (cmd->error != 0) {
         if (cmd->data) {
-            sdmmc_idma_stop();
+            sdmmc_host_dma_stop();
         }
-        ESP_LOGE(TAG, "%s: error %d", __func__, cmd->error);
+        ESP_LOGD(TAG, "%s: error %d", __func__, cmd->error);
     }
 }
 
@@ -274,15 +280,22 @@ static void process_data_status(uint32_t status, sdmmc_command_t* cmd)
         }
         SDMMC.ctrl.fifo_reset = 1;
     }
+    if (cmd->error != 0) {
+        if (cmd->data) {
+            sdmmc_host_dma_stop();
+        }
+        ESP_LOGD(TAG, "%s: error %d", __func__, cmd->error);
+    }
+
 }
 
-static bool mask_check_and_clear(uint32_t* state, uint32_t mask) {
+static inline bool mask_check_and_clear(uint32_t* state, uint32_t mask) {
     bool ret = ((*state) & mask) != 0;
     *state &= ~mask;
     return ret;
 }
 
-static esp_err_t sdmmc_process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, sdmmc_req_state_t* pstate)
+static esp_err_t process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, sdmmc_req_state_t* pstate)
 {
     const char* const s_state_names[] __attribute__((unused)) = {
         "IDLE",
@@ -290,49 +303,46 @@ static esp_err_t sdmmc_process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, s
         "SENDIND_DATA",
         "BUSY"
     };
-
-    sdmmc_req_state_t state = *pstate;
-    sdmmc_req_state_t prev_state;
     sdmmc_event_t orig_evt = evt;
-    ESP_LOGV(TAG, "%s: state=%s", __func__, s_state_names[state]);
-
-    do {
-        prev_state = state;
+    ESP_LOGV(TAG, "%s: state=%s", __func__, s_state_names[*pstate]);
+    sdmmc_req_state_t next_state = *pstate;
+    sdmmc_req_state_t state = (sdmmc_req_state_t) -1;
+    while (next_state != state) {
+        state = next_state;
         switch (state) {
             case SDMMC_IDLE:
                 break;
 
             case SDMMC_SENDING_CMD:
                 if (mask_check_and_clear(&evt.sdmmc_status, SDMMC_CMD_ERR_MASK)) {
-                    sdmmc_process_command_response(orig_evt.sdmmc_status, cmd);
+                    process_command_response(orig_evt.sdmmc_status, cmd);
                     break;
                 }
-
                 if (!mask_check_and_clear(&evt.sdmmc_status, SDMMC_INTMASK_CMD_DONE)) {
                     break;
                 }
-                sdmmc_process_command_response(orig_evt.sdmmc_status, cmd);
+                process_command_response(orig_evt.sdmmc_status, cmd);
                 if (cmd->error != ESP_OK || cmd->data == NULL) {
-                    state = SDMMC_IDLE;
+                    next_state = SDMMC_IDLE;
                     break;
                 }
-                state = SDMMC_SENDING_DATA;
+                next_state = SDMMC_SENDING_DATA;
                 break;
 
 
             case SDMMC_SENDING_DATA:
                 if (mask_check_and_clear(&evt.sdmmc_status, SDMMC_DATA_ERR_MASK)) {
                     process_data_status(orig_evt.sdmmc_status, cmd);
-                    sdmmc_idma_stop();
+                    sdmmc_host_dma_stop();
                 }
-
                 if (mask_check_and_clear(&evt.dma_status, SDMMC_DMA_DONE_MASK)) {
                     s_cur_transfer.desc_remaining--;
                     if (s_cur_transfer.size_remaining) {
-                        sdmmc_fill_dma_descriptors(1);
+                        fill_dma_descriptors(1);
+                        sdmmc_host_dma_resume();
                     }
                     if (s_cur_transfer.desc_remaining == 0) {
-                        state = SDMMC_BUSY;
+                        next_state = SDMMC_BUSY;
                     }
                 }
                 break;
@@ -342,11 +352,11 @@ static esp_err_t sdmmc_process_events(sdmmc_event_t evt, sdmmc_command_t* cmd, s
                     break;
                 }
                 process_data_status(orig_evt.sdmmc_status, cmd);
-                state = SDMMC_IDLE;
+                next_state = SDMMC_IDLE;
                 break;
         }
-        ESP_LOGV(TAG, "%s prev_state=%s state=%s", __func__, s_state_names[prev_state], s_state_names[state]);
-    } while (state != prev_state);
+        ESP_LOGV(TAG, "%s state=%s next_state=%s", __func__, s_state_names[state], s_state_names[next_state]);
+    }
     *pstate = state;
     return ESP_OK;
 }
